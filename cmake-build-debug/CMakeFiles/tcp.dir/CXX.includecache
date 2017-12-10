@@ -1,0 +1,30 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+C:/Users/Vovas/YandexDisk/4_course/nets/repository/tcp/server.cpp
+utils.h
+C:/Users/Vovas/YandexDisk/4_course/nets/repository/tcp/utils.h
+
+C:/Users/Vovas/YandexDisk/4_course/nets/repository/tcp/utils.h
+ws2tcpip.h
+-
+iostream
+-
+map
+-
+vector
+-
+pthread.h
+-
+winsock2.h
+-
+algorithm
+-
+unistd.h
+-
+
