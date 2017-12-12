@@ -49,6 +49,9 @@
 #define ERR_MANAGER_ALREADY_EXISTS  "MAE"
 #define ERR_MANAGER_WRONG_PSWD      "WMP"
 #define ERR_USER_ALREADY_EXISTS     "UAE"
+#define ERR_ITEM_PRICE_TOO_LOW      "TLP"
+#define ERR_ITEM_WRONG_ID           "WII"
+#define ERR_ITEM_ALREADY_SOLD       "IAS"
 
 
 // #include "utils.h"
@@ -89,6 +92,10 @@ std::array<std :: string, COMMAND_NUM> command_list{{
 
 
 
+//TODO:create thread which one will hande if server is closed
+// int error_code;
+// int error_code_size = sizeof(error_code);
+// getsockopt(socket_fd, SOL_SOCKET, SO_ERROR, &error_code, &error_code_size);
 
 int readn(int socket, char *message, size_t length, int flags) {
     int received = 0;
@@ -145,8 +152,56 @@ void user_dialogue(int id, int Socket){
             break;
         }
         else if(request.compare("rise") == 0){
-            std::string lot_number;
-            std::cout << "Input lot number" << std::endl;
+            int  item_id;
+            int  new_price;
+            std::cout << "Input item id" << std::endl;
+            std::cin >> item_id;
+            if(std::cin.fail()){
+                std::cout << "Error: item id should be a number " << std::endl;
+                std::cin.clear();
+                continue;
+            }
+
+            std::cout << "Input new price for the item" << std::endl;
+            std::cin >> new_price;
+            if(std::cin.fail()){
+                std::cout << "Error: price should be a number" << std::endl;
+                std::cin.clear();
+                continue;
+             }
+            std::cout << "Server is proccessing your request..." << std::endl;
+            std::string message = create_message(USER, RISE, std::to_string(id) + " " 
+                                    + std::to_string(item_id) + " " + std::to_string(new_price));
+            if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
+                std::cout << "error sending message" << std::endl;
+                // return 1;
+            }
+            char response[MAX_MESSAGE_SIZE];
+            if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+                std::string response_str = response;
+                // std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
+                if (response_str.compare(1, 4, ERROR) == 0){
+
+                    if(response_str.compare(5, 3, ERR_ITEM_PRICE_TOO_LOW) == 0){
+                        std::cout << "Price " << new_price << " is to loow for this item" << std::endl;
+                    } else if(response_str.compare(5, 3, ERR_ITEM_WRONG_ID) == 0){
+                        std::cout << "There is no item with id  = " << item_id << std::endl;
+                    } else if(response_str.compare(5, 3, ERR_ITEM_ALREADY_SOLD) == 0){
+                        std::cout << "There is no such an item" << std::endl;
+                    } else {
+                        std::cout << "Uknown error from server: " << response_str.substr(5,3)
+                                  << std::endl; 
+                    }
+                }
+                else if(response_str.compare(1, 4, ACKNOWLEDGE) == 0){
+                    std::cout << "Your price accepted waiting for other users"<< std::endl; 
+                }
+                else{
+                    std::cout << "Uknown response from server"<< std::endl; 
+                }
+            }
+
+
             // std::getline(std::cin, lot_number);
             // send request for rise with this number 
         }
@@ -156,7 +211,7 @@ void user_dialogue(int id, int Socket){
                 std::cout << "error sending message" << std::endl;
                 // return 1;
             }
-            std::cout << "Waiting for the server" << std::endl;
+            std::cout << "Waiting for the server..." << std::endl;
             char response[MAX_MESSAGE_SIZE];
             if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
                 std::string str_response = response;
@@ -172,13 +227,10 @@ void user_dialogue(int id, int Socket){
 
                         std::cout   << "msg # " << item_vector[0]
                                     << " id = " << item_vector[1]
-                                    << " price =  " << item_vector[2]
-                                    << " name = " << item_vector[3]
+                                    << " name =  " << item_vector[2]
+                                    << " price = " << item_vector[3]
                                     << " holder =  " << item_vector[4]
                                     << std::endl;
-
-
-
                     }else{
                         std::cout << "Error while reading items from server" << std::endl;
                     }
@@ -218,7 +270,7 @@ void manager_dialogue(int Socket){
         else if(request.compare("additem") == 0){
             
             std::string item_name;
-            std::string item_price;
+            unsigned int item_price;
             
             std::cout << "Input item name" << std::endl;
             std::cin >> item_name;
@@ -230,7 +282,14 @@ void manager_dialogue(int Socket){
 
             std::cout << "Input item begin price" << std::endl;
             std::cin >> item_price;
-            if(item_name.size() > MAX_IT_NAME_SIZE){
+            if(std::cin.fail()){
+                std::cout << "Price should be a number" << std::endl;
+                std::cin.clear();
+                continue;
+             }
+            
+            std :: string price_str = std::to_string(item_price);
+            if(price_str.size() > MAX_IT_NAME_SIZE){
                 std::cout << "Item price should be not more than symbols" 
                           << MAX_IT_NAME_SIZE << std::endl;
                 continue;  
@@ -239,7 +298,7 @@ void manager_dialogue(int Socket){
             // data = item_name;
             // data += " ";
             // data += item_price;
-            std::string message = create_message(MANAGER, NEWITEM, item_name + " " + item_price);
+            std::string message = create_message(MANAGER, NEWITEM, item_name + " " + price_str);
             if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
                 std::cout << "error sending message" << std::endl;
                 // return 1;

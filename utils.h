@@ -51,9 +51,13 @@
 
 
 // errors
+
 #define ERR_MANAGER_ALREADY_EXISTS  "MAE"
 #define ERR_MANAGER_WRONG_PSWD      "WMP"
 #define ERR_USER_ALREADY_EXISTS     "UAE"
+#define ERR_ITEM_PRICE_TOO_LOW      "TLP"
+#define ERR_ITEM_WRONG_ID           "WII"
+#define ERR_ITEM_ALREADY_SOLD       "IAS"
 
 
 const int MAX_MESSAGE_SIZE = 256;
@@ -68,6 +72,43 @@ const int ITEM_LOGIN_LEN = 100;
 const int HOLDER_login_LEN = 100;
 const char * manager_name  = "manager";
 const char *manager_password = "1234";
+
+
+
+//TODO: id is stored as a key in a clietns_map so id is useless in struct ???
+//TODO: isert Socket to struct of client
+struct client {
+    std::string login;
+    int id;
+    std::string password;
+};
+
+struct item {
+    std::string name;
+    std::string holder = "manager"; // default holder
+    int id;
+    int price;
+    // default id =  -1 matches to manager
+    int holder_id = -1;
+};
+
+
+//struct client {
+//    std::string login;
+//    unsigned int id;
+//    std::string password;
+//};
+//
+//struct item {
+//    std::string name;
+//    std::string holder = "manager"; // default holder
+//    unsigned int id;
+//    unsigned int price;
+//    // default id =  -1 matches to manager
+//    unsigned int holder_id = -1;
+//};
+
+
 
 
 //struct  item

@@ -5,14 +5,18 @@
 #include "utils.h"
 
 
-
-
 //auto logger = spdlog::rotating_logger_mt("clients_logger", "logthreads", 1024*1024, 1);
 //auto mainlog = spdlog::rotating_logger_mt("main_logger", "log", 1024*1024, 1);
 
 std::vector<std::pair<pthread_t, long> > clients;
-pthread_mutex_t main_log_mtx;
-//std::array<bool, MAX_CLIENTS> idArray;
+
+std::map<int, client> clients_map;
+std::map<int, item> items_map;
+
+pthread_mutex_t vector_clients_mutex;
+pthread_mutex_t map_clients_mutex;
+pthread_mutex_t map_items_mutex;
+
 std::array<std::string, COMMAND_NUM> command_list{{
 //        "SEND",
                                                           "kill - delete client by number",
@@ -21,21 +25,8 @@ std::array<std::string, COMMAND_NUM> command_list{{
                                                           "help - repeat the help list again"}
 };
 
-//TODO: id is stored as a key in a clietns_map so id is useless in struct ???
-struct client {
-    std::string login;
-    unsigned int id;
-    std::string password;
-};
+bool isManagerLogged = false;
 
-struct item{
-    std::string name;
-    std::string holder = "manager"; // default holder
-    unsigned int id;
-    unsigned int price;
-    // default id =  -1 matches to manager
-    unsigned int holder_id = -1;
-};
 
 // Getting a unique 32-bit ID is intuitively simple: the next one.
 // Works 4 billion times. Unique for 136 years if you need one a second
@@ -45,25 +36,17 @@ int generateUserID() {
 //    return ++generator_id;
 }
 
-int generateItemID()
-{
+int generateItemID() {
     static int seed = 0;
     return ++seed;
 }
 
-//std::vector<client> list_of_clients;
-std::map<unsigned int, client> clients_map;
-std::map<unsigned int, item> items_map;
-
-
-bool isManagerLogged = false;
-
 bool kill_client(int id) {
-    pthread_mutex_lock(&main_log_mtx);
+    pthread_mutex_lock(&vector_clients_mutex);
 //    logger->info("start to kill client # {}", id);
     if (clients.size() < id) {
 //        logger->info("no client # {}", id);
-        pthread_mutex_unlock(&main_log_mtx);
+        pthread_mutex_unlock(&vector_clients_mutex);
         return false;
     }
     auto it = clients.begin() + (id - 1);
@@ -73,7 +56,7 @@ bool kill_client(int id) {
 //        logger->info("success sock off client # {}", it->second);
     else {
 //        logger->error("error sock off client # {} , error = ", it->second, errno);
-//        pthread_mutex_unlock(&main_log_mtx);
+//        pthread_mutex_unlock(&vector_clients_mutex);
         return false;
     }
     if (closesocket(it->second) == 0)
@@ -82,7 +65,7 @@ bool kill_client(int id) {
     else {
         std::cout << "kill client: error sock close client  #" << id << "errno" << errno << std::endl;
 //        logger->error("error sock close client  # {}, error = ", id, errno);
-//        pthread_mutex_unlock(&main_log_mtx);
+//        pthread_mutex_unlock(&vector_clients_mutex);
         return false;
     }
     if (pthread_join(it->first, NULL) == 0)
@@ -91,11 +74,11 @@ bool kill_client(int id) {
     else {
         std::cout << "kill client: error thread join client # " << it->second << std::endl;
 //        logger->error("error thread join client  # {}", it->second);
-        pthread_mutex_unlock(&main_log_mtx);
+        pthread_mutex_unlock(&vector_clients_mutex);
         return false;
     }
     clients.erase(it);
-    pthread_mutex_unlock(&main_log_mtx);
+    pthread_mutex_unlock(&vector_clients_mutex);
     return true;
 }
 
@@ -109,7 +92,7 @@ void showCommands() {
 }
 
 void showClients() {
-//    pthread_mutex_lock(&main_log_mtx);
+//    pthread_mutex_lock(&vector_clients_mutex);
     if (clients.size() != 0) {
         int i = 1;
         for (auto it : clients) {
@@ -120,11 +103,7 @@ void showClients() {
         }
     } else
         std::cout << "no connected clients" << std::endl;
-//    pthread_mutex_unlock(&main_log_mtx);
-}
-
-int compare_string(char *first, char *second) {
-    return (strcmp(first, second) == 0);
+//    pthread_mutex_unlock(&vector_clients_mutex);
 }
 
 int readn(int sock, char *buff, int size, int flag) {
@@ -138,13 +117,10 @@ int readn(int sock, char *buff, int size, int flag) {
         int temp_recv = recv(sock, temp_buff, size, 0);
         if (temp_recv <= 0)
             return -1;
-//        std::cout << "temp_recv = " << temp_recv<<std::endl;
         for (int i = 0; i < temp_recv; i++)
             buff[i + recv_size] = temp_buff[i];
         recv_size += temp_recv;
-//        std::cout << "buff = " << buff << std::endl;
     }
-//    std::cout<<"kek" << std::endl;
     return recv_size;
 }
 
@@ -165,11 +141,12 @@ std::string create_message(std::string role, const char *command, std::string da
     return message;
 }
 
-std::vector<std::string> split(std::string s, std::string delimiter) { //Разбивает строку по делиметру
+//split function as python builts-in
+std::vector<std::string> split(std::string s, std::string delimiter) {
     std::vector<std::string> list;
     size_t pos = 0;
     std::string token;
-    while ((pos = s.find(delimiter)) != std::string::npos) { //пока не конец строки
+    while ((pos = s.find(delimiter)) != std::string::npos) {
         token = s.substr(0, pos);
         list.push_back(token);
         s.erase(0, pos + delimiter.length());
@@ -187,12 +164,12 @@ bool isLogged(std::string login) {
 }
 
 void print_clients() {
-    if(!isManagerLogged)
+    if (isManagerLogged)
         std::cout << "Manager is logged in" << std::endl;
     else
         std::cout << "Manager is not logged in" << std::endl;
 
-    if (clients_map.size() == 0){
+    if (clients_map.size() == 0) {
         std::cout << "No clients connected" << std::endl;
         return;
     }
@@ -204,21 +181,22 @@ void print_clients() {
 }
 
 void print_items() {
-    if (items_map.size() == 0){
+    if (items_map.size() == 0) {
         std::cout << "No items in the list" << std::endl;
         return;
     }
     std::cout << "Items:" << std::endl;
     for (auto it : items_map)
-        std::cout   << "id = " << it.first
-                    << " price =  " << it.second.price
-                    << " login = " << it.second.name
-                    << " holder =  " << it.second.holder
-                    << std::endl;
+        std::cout << "id = " << it.first
+                  << " price =  " << it.second.price
+                  << " login = " << it.second.name
+                  << " holder =  " << it.second.holder
+                  << std::endl;
 }
 
 void *run_client(void *param) {
 //    SOCKET sock = (SOCKET *)param;
+    boolean isThisManager = false;
     const char *exit_str = "exit";
     int i = 0;
     long sock = (long) param;
@@ -248,7 +226,8 @@ void *run_client(void *param) {
                 // manager_name checking is actuualy useless: login == manager_name &&
                 if (!isManagerLogged) {
                     if (manager_password == pswd) {
-                      isManagerLogged = true;
+                        isManagerLogged = true;
+                        isThisManager = true;
                         std::string message = create_message(SERVER, ACKNOWLEDGE, MANAGER);
                         if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                             std::cout << "error send" << std::endl;
@@ -264,8 +243,7 @@ void *run_client(void *param) {
                     if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                         std::cout << "error send" << std::endl;
                 }
-            }
-            else if (isLogged(login)) {
+            } else if (isLogged(login)) {
                 std::cout << "contains" << std::endl;
                 std::string message = create_message(SERVER, ERROR, ERR_USER_ALREADY_EXISTS);
                 if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
@@ -276,7 +254,7 @@ void *run_client(void *param) {
                 newClient.login = login;
                 newClient.id = generateUserID();
                 newClient.password = pswd;
-                clients_map.insert(std::pair<unsigned int, client>(newClient.id, newClient));
+                clients_map.insert(std::pair<int, client>(newClient.id, newClient));
                 std::string data = USER;
                 char buf[30];
                 data += itoa(newClient.id, buf, 10);
@@ -284,31 +262,30 @@ void *run_client(void *param) {
                 if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                     std::cout << "error send message to user with id =  " << newClient.id << std::endl;
             }
-        } else if (msg.compare(1, 4, EXIT) == 0) {
+        } else if (msg.compare(1, 4, EXIT) == 0 && msg.compare(0, 1, MANAGER) != 0) {
             std::cout << "User going to logout" << std::endl;
             std::cout << "Received message = " << msg << std::endl;
             std::string str_id = msg.substr(5, msg.size() - 5);//str_response.size() - 6);
             int id = atoi(str_id.c_str());
-            if(clients_map.erase(id) == 1)
+            if (clients_map.erase(id) == 1)
                 std::cout << "Successfully remove user with id = " << id << std::endl;
             else
                 std::cout << "Error remove user with id = " << id << std::endl;
 
-        }
-        else if(msg.compare(1,4, NEWITEM) == 0){
+        } else if (msg.compare(1, 4, NEWITEM) == 0) {
 //            MANAGER, NEWITEM, item_name + " " + item_price
             std::cout << "we have a message to create new item" << std::endl;
             std::vector<std::string> name_and_price = split(msg.substr(5, MAX_MESSAGE_SIZE), " ");
             item newItem;
             newItem.id = generateItemID();
-            newItem.name =  name_and_price[0];
-            // TODO: error if atoi heras dva we have to send acknowledge that add an item
+            newItem.name = name_and_price[0];
             newItem.price = atoi(name_and_price[1].c_str());
             std::cout << "detected item name " << newItem.name
                       << " item price = " << newItem.price << std::endl;
-            items_map.insert(std::pair<unsigned  int, item>(newItem.id, newItem));
-        }
-        else if(msg.compare(1,4,GETLIST) == 0){
+            items_map.insert(std::pair<int, item>(newItem.id, newItem));
+            // TODO: send acknowledge of adding item
+
+        } else if (msg.compare(1, 4, GETLIST) == 0) {
             // TODO: mutex for items_map
             std::cout << "we have a message to send list of items" << std::endl;
 //            SENDLIST
@@ -320,7 +297,7 @@ void *run_client(void *param) {
             if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                 std::cout << "error send" << std::endl;
             int msg_number = 1;
-            for(auto it = items_map.begin(); it != items_map.end(); it++){
+            for (auto it = items_map.begin(); it != items_map.end(); it++) {
                 char buf[30];
                 std::string data = "";
                 data += itoa(msg_number, buf, 10);
@@ -331,12 +308,53 @@ void *run_client(void *param) {
 //                char buf1[30];
                 data += itoa(it->second.price, buf, 10);
                 data += " ";
-                data += it->second. holder;
+                data += it->second.holder;
                 std::string message = create_message(SERVER, SENDLIST, data);
                 if (send(sock, message.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                     std::cout << "error send" << std::endl;
                 msg_number++;
             }
+        } else if (msg.compare(1, 4, RISE) == 0){
+            std::cout << "we get a request to rise" << std::endl;
+            std::vector<std::string> item_id_and_price = split(msg.substr(5, MAX_MESSAGE_SIZE), " ");
+            int user_id = atoi(item_id_and_price[0].c_str());
+            int item_id = atoi(item_id_and_price[1].c_str());
+            int new_price = atoi(item_id_and_price[2].c_str());
+            std::cout   << "user id = " << user_id
+                        << " item id = " << item_id
+                        << " new price = " << new_price
+                        << std::endl;
+            // check for such an id in items
+            pthread_mutex_lock(&map_items_mutex);
+            if(items_map.find(item_id) != items_map.end()){
+                // check for such an price
+                if(items_map.at(item_id).price < new_price) {
+                    std::string response = create_message(SERVER, ACKNOWLEDGE, " ");
+                    if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
+                        std::cout << "error send" << std::endl;
+                    else{
+                        items_map.at(item_id).price = new_price;
+                        items_map.at(item_id).holder = clients_map.at(user_id).login;
+                        items_map.at(item_id).holder_id = user_id;
+                    }
+                }else{
+                    std::string response = create_message(SERVER, ERROR, ERR_ITEM_PRICE_TOO_LOW);
+                    if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
+                        std::cout << "error send" << std::endl;
+                }
+
+            }
+            else{
+                std::string response = create_message(SERVER, ERROR, ERR_ITEM_WRONG_ID);
+                if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
+                    std::cout << "error send" << std::endl;
+
+            }
+            pthread_mutex_unlock(&map_items_mutex);
+
+//            items_map.insert(std::pair<int, item>(newItem.id, newItem));
+            // TODO: send acknowledge of adding item
+
         }
 
     }
@@ -361,7 +379,8 @@ void *run_client(void *param) {
         std::cout << "error = " << WSAGetLastError() << std::endl;
 //            logger->info("error sock close client  with sock # {}", sock);
     }
-
+    if(isThisManager == true)
+        isManagerLogged = false;
     std::cout << "we finish " << sock << std::endl;
 //    TODO: if socket off than client remove from clients_map
 //    logger->info("we finish {}", sock);
@@ -371,7 +390,14 @@ void *run_client(void *param) {
 void *run_server(void *param) {
     // have to init array of clients id
 //    initIDArr();
-    if (pthread_mutex_init(&main_log_mtx, NULL) != 0) {
+    if (pthread_mutex_init(&vector_clients_mutex, NULL) != 0) {
+        std::cout << "mutex init failed" << std::endl;
+        pthread_exit(NULL);
+    }
+    if (pthread_mutex_init(&map_clients_mutex, NULL) != 0) {
+        std::cout << "mutex init failed" << std::endl;
+        pthread_exit(NULL);
+    }    if (pthread_mutex_init(&map_items_mutex, NULL) != 0) {
         std::cout << "mutex init failed" << std::endl;
         pthread_exit(NULL);
     }
@@ -403,10 +429,8 @@ void *run_server(void *param) {
         }
     }
 
-    std::cout << "before lock mutex" << std::endl;
 //    TODO: error with using posix mutex
-    pthread_mutex_lock(&main_log_mtx);
-    std::cout << "in lock mutex" << std::endl;
+    pthread_mutex_lock(&vector_clients_mutex);
     for (auto it: clients) {
         if (shutdown(it.second, SD_BOTH) == 0)
             std::cout << "success sock shutdown " << it.second << std::endl;
@@ -431,11 +455,8 @@ void *run_server(void *param) {
 //            mainlog->error("error join client thread: {}  number of socket: {}", it.first, it.second);
 //        WSACleanup();
     }
-    std::cout << "2  in lock mutex" << std::endl;
     clients.clear();
-    pthread_mutex_unlock(&main_log_mtx);
-    std::cout << "after lock mutex" << std::endl;
-
+    pthread_mutex_unlock(&vector_clients_mutex);
     std::cout << "server clients thread is done" << std::endl;
 //    mainlog->info( "server clients thread is done");
     pthread_exit(NULL);
@@ -446,15 +467,11 @@ int main(int argc, char **argv) {
 
 // windows init shit
     WSADATA wsaData;
-
     SOCKET MainSock = INVALID_SOCKET;
-
     struct addrinfo *result = NULL;
     struct addrinfo hints;
-
-    int iSendResult;
-
     int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+
     if (iResult != 0) {
         std::cout << "WSAStartup failed with error:" << iResult << std::endl;
 //        mainlog->info("WSAStartup failed with error: {} \n", iResult);
@@ -495,8 +512,6 @@ int main(int argc, char **argv) {
     } else
         std::cout << "Successful creation of socket" << std::endl;
 //        mainlog->info("Successful creation of socket\n");
-
-
 
     // Setup the TCP listening socket
     iResult = bind(MainSock, result->ai_addr, (int) result->ai_addrlen);
@@ -580,11 +595,10 @@ int main(int argc, char **argv) {
             std::cout << "No such a command:  " << cmd_string << "  ! Retry!" << std::endl;
 
     }
+
     if (pthread_join(server_init, NULL) == 0)
         std::cout << "Join is done # " << "\nBye!\n";
-    WSACleanup();
 
-//    else
-//        printf("Join fault # %li\n", server_init);
+    WSACleanup();
     return 0;
 }
