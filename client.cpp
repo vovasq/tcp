@@ -35,15 +35,14 @@
 #define LOGIN           "logi"
 #define GETLIST         "getl"
 #define RISE            "rise"
-#define PASS            "pass" // &????????????????/   do we actually need it
 #define SHUTDOWN        "shut"
 #define STOP            "stop"
 #define NEWITEM         "newi"
-#define DELETEITEM      "deli"
 #define SENDLIST        "sndl"
-#define APPROVE         "aprv"
 #define ACKNOWLEDGE     "ackn"
-#define DENY            "deny"
+#define BROADCAST       "brod"
+#define APPROVE         "aprv"
+
 
 // errors
 #define ERR_MANAGER_ALREADY_EXISTS  "MAE"
@@ -69,17 +68,14 @@ const char * manager_name  = "manager";
 const char *manager_password = "1234";
 
 
+pthread_mutex_t stdout_mutex;
 
-// struct  item
-// {
-//     char login
-// }
 
 std::array<std :: string, COMMAND_NUM> command_list{{
-        "exit",
-        "rise",
-        "getlist",
-        "help - repeat the help list again"}
+                                                            "exit",
+                                                            "rise",
+                                                            "getlist",
+                                                            "help - repeat the help list again"}
 };
 
 // std::array<std :: string, COMMAND_NUM> command_list_manager{{
@@ -132,9 +128,81 @@ std::vector<std::string> split(std::string s, std::string delimiter) { //Раз�
     return list;
 }
 
+void * listener_init(void * param){
+
+    // int Socket = *((int *)param);
+    long Socket = (long)param;
+    do{
+        char response[MAX_MESSAGE_SIZE];
+        if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+            std::string response_str = response;
+            // std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
+            if (response_str.compare(1, 4, ERROR) == 0){
+
+                if(response_str.compare(5, 3, ERR_ITEM_PRICE_TOO_LOW) == 0){
+                    std::cout << "Price  is to loow for this item" << std::endl;
+                } else if(response_str.compare(5, 3, ERR_ITEM_WRONG_ID) == 0){
+                    std::cout << "There is no item  with this id" << std::endl;
+                } else if(response_str.compare(5, 3, ERR_ITEM_ALREADY_SOLD) == 0){
+                    std::cout << "There is no such an item" << std::endl;
+                } else {
+                    std::cout << "Uknown error from server: " << response_str.substr(5,3)
+                              << std::endl;
+                }
+            } else if(response_str.compare(1, 4, ACKNOWLEDGE) == 0){
+                std::cout << "Your price accepted waiting for other users"<< std::endl;
+            } else if(response_str.compare(1, 4, SENDLIST) == 0){
+                std::cout << "listen handler" << std::endl;
+                std::string size = response_str.substr(5, response_str.size());
+                int size_of_list = atoi(size.c_str());
+                std::cout << "size_of_list = " << size_of_list << std::endl;
+                for(int i = 0; i < size_of_list; i++)
+                {
+                    char item_buf[MAX_MESSAGE_SIZE];
+                    if(readn(Socket, item_buf, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+                        std::string str_item_buf = item_buf;
+                        std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
+                        std::cout   << "msg # " << item_vector[0]
+                                    << " id = " << item_vector[1]
+                                    << " name =  " << item_vector[2]
+                                    << " price = " << item_vector[3]
+                                    << " holder =  " << item_vector[4]
+                                    << std::endl;
+                    }else{
+                        std::cout << "Error while reading items from server" << std::endl;
+                        break;
+                    }
+                }
+            }else if(response_str.compare(1, 4, BROADCAST) == 0){
+                std::vector<std::string> holder_price_name = split(response_str.substr(5, MAX_MESSAGE_SIZE), " ");
+                if(holder_price_name[holder_price_name.size() - 1] != APPROVE)
+                    std::cout   << "Client " << holder_price_name[0]
+                                << " rises price to " << holder_price_name[1]
+                                << " for item " << holder_price_name[2]
+                                << std::endl;
+                else
+                    std::cout   << "Client " << holder_price_name[0]
+                                << " gets item " << holder_price_name[2]
+                                << " with price " << holder_price_name[1]
+                                << std::endl;
+
+            }else{
+                std::cout << "Uknown response from server"<< std::endl;
+            }
+        }else{
+            std::cout << "dddd"<<std::endl;
+            break;
+        }
+        // get list response
+
+    }while(true);
+
+    pthread_exit(NULL);
+}
 
 void user_dialogue(int id, int Socket){
     do {
+
         char Buffer[MAX_MESSAGE_SIZE];
         std::string request;
         std::cout << "Input your request:" << std::endl;
@@ -148,7 +216,7 @@ void user_dialogue(int id, int Socket){
                 // return 1;
             }
             shutdown(Socket, SHUT_RDWR);
-            close(Socket); 
+            close(Socket);
             break;
         }
         else if(request.compare("rise") == 0){
@@ -168,82 +236,83 @@ void user_dialogue(int id, int Socket){
                 std::cout << "Error: price should be a number" << std::endl;
                 std::cin.clear();
                 continue;
-             }
+            }
             std::cout << "Server is proccessing your request..." << std::endl;
-            std::string message = create_message(USER, RISE, std::to_string(id) + " " 
-                                    + std::to_string(item_id) + " " + std::to_string(new_price));
+            std::string message = create_message(USER, RISE, std::to_string(id) + " "
+                                                             + std::to_string(item_id) + " " + std::to_string(new_price));
+
             if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
                 std::cout << "error sending message" << std::endl;
                 // return 1;
             }
-            char response[MAX_MESSAGE_SIZE];
-            if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
-                std::string response_str = response;
-                // std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
-                if (response_str.compare(1, 4, ERROR) == 0){
+            // char response[MAX_MESSAGE_SIZE];
+            // if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+            //     std::string response_str = response;
+            //     // std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
+            //     if (response_str.compare(1, 4, ERROR) == 0){
 
-                    if(response_str.compare(5, 3, ERR_ITEM_PRICE_TOO_LOW) == 0){
-                        std::cout << "Price " << new_price << " is to loow for this item" << std::endl;
-                    } else if(response_str.compare(5, 3, ERR_ITEM_WRONG_ID) == 0){
-                        std::cout << "There is no item with id  = " << item_id << std::endl;
-                    } else if(response_str.compare(5, 3, ERR_ITEM_ALREADY_SOLD) == 0){
-                        std::cout << "There is no such an item" << std::endl;
-                    } else {
-                        std::cout << "Uknown error from server: " << response_str.substr(5,3)
-                                  << std::endl; 
-                    }
-                }
-                else if(response_str.compare(1, 4, ACKNOWLEDGE) == 0){
-                    std::cout << "Your price accepted waiting for other users"<< std::endl; 
-                }
-                else{
-                    std::cout << "Uknown response from server"<< std::endl; 
-                }
-            }
+            //         if(response_str.compare(5, 3, ERR_ITEM_PRICE_TOO_LOW) == 0){
+            //             std::cout << "Price " << new_price << " is to loow for this item" << std::endl;
+            //         } else if(response_str.compare(5, 3, ERR_ITEM_WRONG_ID) == 0){
+            //             std::cout << "There is no item with id  = " << item_id << std::endl;
+            //         } else if(response_str.compare(5, 3, ERR_ITEM_ALREADY_SOLD) == 0){
+            //             std::cout << "There is no such an item" << std::endl;
+            //         } else {
+            //             std::cout << "Uknown error from server: " << response_str.substr(5,3)
+            //                       << std::endl;
+            //         }
+            //     }
+            //     else if(response_str.compare(1, 4, ACKNOWLEDGE) == 0){
+            //         std::cout << "Your price accepted waiting for other users"<< std::endl;
+            //     }
+            //     else{
+            //         std::cout << "Uknown response from server"<< std::endl;
+            //     }
+            // }
 
 
             // std::getline(std::cin, lot_number);
-            // send request for rise with this number 
+            // send request for rise with this number
         }
         else if(request.compare("getlist") == 0){
             std::string message = create_message(USER, GETLIST, " ");
+            std::cout << "Waiting for the server..." << std::endl;
             if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
                 std::cout << "error sending message" << std::endl;
                 // return 1;
             }
-            std::cout << "Waiting for the server..." << std::endl;
-            char response[MAX_MESSAGE_SIZE];
-            if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
-                std::string str_response = response;
-                std::string size = str_response.substr(5, str_response.size());
-                int size_of_list = atoi(size.c_str());
-                std::cout << "size_of_list = " << size_of_list << std::endl;
-                for(int i = 0; i < size_of_list; i++)
-                {
-                    char item_buf[MAX_MESSAGE_SIZE];
-                    if(readn(Socket, item_buf, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
-                        std::string str_item_buf = item_buf;
-                        std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
+            // char response[MAX_MESSAGE_SIZE];
+            // if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+            //     std::string str_response = response;
+            //     std::string size = str_response.substr(5, str_response.size());
+            //     int size_of_list = atoi(size.c_str());
+            //     std::cout << "size_of_list = " << size_of_list << std::endl;
+            //     for(int i = 0; i < size_of_list; i++)
+            //     {
+            //         char item_buf[MAX_MESSAGE_SIZE];
+            //         if(readn(Socket, item_buf, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
+            //             std::string str_item_buf = item_buf;
+            //             std::vector<std::string> item_vector = split(str_item_buf.substr(5, MAX_MESSAGE_SIZE), " ");
 
-                        std::cout   << "msg # " << item_vector[0]
-                                    << " id = " << item_vector[1]
-                                    << " name =  " << item_vector[2]
-                                    << " price = " << item_vector[3]
-                                    << " holder =  " << item_vector[4]
-                                    << std::endl;
-                    }else{
-                        std::cout << "Error while reading items from server" << std::endl;
-                    }
-                }
-            }else{
-                std::cout << "Error with message from server" <<std::endl;
-            }
+            //             std::cout   << "msg # " << item_vector[0]
+            //                         << " id = " << item_vector[1]
+            //                         << " name =  " << item_vector[2]
+            //                         << " price = " << item_vector[3]
+            //                         << " holder =  " << item_vector[4]
+            //                         << std::endl;
+            //         }else{
+            //             std::cout << "Error while reading items from server" << std::endl;
+            //         }
+            //     }
+            // else{
+            //     std::cout << "Error with message from server" <<std::endl;
+            // }
         }
         else if(request.compare("help") == 0){
             std::cout << "Here it is a list of commands" << std::endl;
         }
         else {
-            std::cout << "Uknown request! Retry!" << std :: endl; 
+            std::cout << "Uknown request! Retry!" << std :: endl;
         }
     } while (true);
 }
@@ -253,9 +322,8 @@ void manager_dialogue(int Socket){
         char Buffer[MAX_MESSAGE_SIZE];
         std::string request;
         std::cout << "Input your request:" << std::endl;
-
-        // std::getline(std::cin, request);
         std::cin >> request;
+
         if(request.compare("exit") == 0){
             std::cout << "You are trying to logging out" << std::endl;
             std::string message = create_message(MANAGER, EXIT,"");
@@ -264,18 +332,17 @@ void manager_dialogue(int Socket){
                 // return 1;
             }
             shutdown(Socket, SHUT_RDWR);
-            close(Socket); 
+            close(Socket);
             break;
-        }
-        else if(request.compare("additem") == 0){
-            
+        } else if(request.compare("additem") == 0){
+
             std::string item_name;
             unsigned int item_price;
-            
+
             std::cout << "Input item name" << std::endl;
             std::cin >> item_name;
             if(item_name.size() > MAX_IT_NAME_SIZE) {
-                std::cout << "Item Name should be not more than symbols" 
+                std::cout << "Item Name should be not more than symbols"
                           << MAX_IT_NAME_SIZE << std::endl;
                 continue;
             }
@@ -286,14 +353,14 @@ void manager_dialogue(int Socket){
                 std::cout << "Price should be a number" << std::endl;
                 std::cin.clear();
                 continue;
-             }
-            
+            }
+
             std :: string price_str = std::to_string(item_price);
             if(price_str.size() > MAX_IT_NAME_SIZE){
-                std::cout << "Item price should be not more than symbols" 
+                std::cout << "Item price should be not more than symbols"
                           << MAX_IT_NAME_SIZE << std::endl;
-                continue;  
-            } 
+                continue;
+            }
             // std::string data;
             // data = item_name;
             // data += " ";
@@ -303,26 +370,29 @@ void manager_dialogue(int Socket){
                 std::cout << "error sending message" << std::endl;
                 // return 1;
             }
-            // send request for rise with this number 
-        }else if(request.compare("stop") == 0){
-         
+            // send request for rise with this number
+        } else if(request.compare("getlist") == 0){
+            std::string message = create_message(MANAGER, GETLIST, " ");
+            std::cout << "Waiting for the server..." << std::endl;
+            if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
+                std::cout << "error sending message" << std::endl;
+                // return 1;
+            }
+        } else if(request.compare("stop") == 0){
             std::cout << "Waiting for the server" << std::endl;
-            
-        }
-        else if(request.compare("help") == 0){
+        } else if(request.compare("help") == 0){
             std::cout << "Here it is a list of commands" << std::endl;
-            
-
-        }
-        else {
-            std::cout << "Uknown request! Retry!" << std :: endl; 
+        } else {
+            std::cout << "Uknown request! Retry!" << std :: endl;
         }
     } while (true);
 }
 
-
 int main(int argc, char **argv) {
-    int Socket = socket(AF_INET, SOCK_STREAM, 0);
+
+    pthread_t broadcast_listener;
+
+    long Socket = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in SockAddr;
     SockAddr.sin_family = AF_INET;
     SockAddr.sin_port = htons(27015);
@@ -351,12 +421,12 @@ int main(int argc, char **argv) {
         std::cout << "You are trying to logging as a manager" << std::endl;
         message = create_message(MANAGER, LOGIN, login + del + password);
     } else{
-        message = create_message(USER, LOGIN, login + del + password);   
+        message = create_message(USER, LOGIN, login + del + password);
     }
     // std::cout << data << std::endl;
     // std::cout << message << std::endl;
     if(send(Socket, message.c_str(), MAX_MESSAGE_SIZE, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE){
-    // if(send(Socket, message, strlen(message) + 1, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE)
+        // if(send(Socket, message, strlen(message) + 1, MSG_NOSIGNAL) < MAX_MESSAGE_SIZE)
         std::cout << "error sending message" << std::endl;
         return 1;
     }
@@ -366,43 +436,57 @@ int main(int argc, char **argv) {
     if(readn(Socket, response, MAX_MESSAGE_SIZE, MSG_NOSIGNAL) == MAX_MESSAGE_SIZE) {
         std::string str_response = response;
         if(str_response.compare(1,4,ACKNOWLEDGE) == 0){
-            if(str_response.compare(5, 1, USER) == 0){    
-                // TODO: get user id  substr 
+            if (pthread_mutex_init(&stdout_mutex, NULL) != 0) {
+                std::cout << "mutex init failed" << std::endl;
+                pthread_exit(NULL);
+            }
+
+            if(pthread_create(&broadcast_listener, NULL, listener_init, (void *) (Socket)) == 0)
+                std::cout << "Thread for listen was successfully created" << std::endl;
+            else
+                std::cout << "kekkeke" <<std::endl;
+
+            if(str_response.compare(5, 1, USER) == 0){
+                // TODO: get user id  substr
                 std::cout << "str size = " << str_response.size() << std::endl;
                 // size_t  l = str_response.size() - 6;
                 std::string str_id= str_response.substr(6, str_response.size() - 6);//str_response.size() - 6);
                 int id = atoi(str_id.c_str());
                 std::cout << "You are connected as user with id = "<< id << std::endl;
                 user_dialogue( id, Socket);
+                // pthread_create
             }else{
-            
-                std::cout << "You are connected as MANAGER" << std::endl; 
+
+                std::cout << "You are connected as MANAGER" << std::endl;
                 // TODO:
                 manager_dialogue(Socket);
             }
+
         }
         else if(str_response.compare(1,4,ERROR) == 0){
-            
+
             if(str_response.compare(5, 3, ERR_MANAGER_WRONG_PSWD) == 0)
                 std::cout << "Wrong password for MANAGER" << std::endl;
-            else if(str_response.compare(5, 3, ERR_MANAGER_ALREADY_EXISTS) == 0) 
-                std::cout << "MANAGER is already logged in" << std::endl; 
-            else if(str_response.compare(5, 3, ERR_USER_ALREADY_EXISTS) == 0) 
-                std::cout << "USER is already logged in" << std::endl; 
+            else if(str_response.compare(5, 3, ERR_MANAGER_ALREADY_EXISTS) == 0)
+                std::cout << "MANAGER is already logged in" << std::endl;
+            else if(str_response.compare(5, 3, ERR_USER_ALREADY_EXISTS) == 0)
+                std::cout << "USER is already logged in" << std::endl;
             else
-                std::cout << "Uknown error from server" << std::endl; 
+                std::cout << "Uknown error from server" << std::endl;
         }
         else{
-            std::cout << "Uknown error from server" << std::endl; 
+            std::cout << "Uknown error from server" << std::endl;
         }
     }
     else{
-        std::cout << "Server wrong response" <<  response << std::endl;        
+        std::cout << "Server wrong response" <<  response << std::endl;
     }
 
 
     // shutdown(Socket, SHUT_RDWR);
-    // close(Socket); 
+    // close(Socket);
+    // if (pthread_join(broadcast_listener, NULL) == 0)
+    //     std::cout << "Join is done" << std::endl;
 
     std::cout << "Bye!" << std::endl;
     return 0;

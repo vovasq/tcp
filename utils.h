@@ -39,6 +39,7 @@
 #define LOGIN           "logi"
 #define GETLIST         "getl"
 #define RISE            "rise"
+#define BROADCAST       "brod"
 #define PASS            "pass"
 #define SHUTDOWN        "shut"
 #define STOP            "stop"
@@ -66,6 +67,7 @@ const int MAX_LOGIN_SIZE = 100;
 const int MAX_IT_NAME_SIZE = 100;
 const int MAX_IT_PRICE_SIZE = 4;
 const int MAX_HOLDER_NAME = 50;
+const int BROADCAST_ALL = -1;
 
 const int  COMMAND_NUM = 4;
 const int ITEM_LOGIN_LEN = 100;

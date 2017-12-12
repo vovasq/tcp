@@ -194,6 +194,23 @@ void print_items() {
                   << std::endl;
 }
 
+void broadcastSend(int except_sock, std::string data){
+    if(except_sock != BROADCAST_ALL)
+        for (auto it :clients){
+            if(it.second != except_sock){
+                std::string response = create_message(SERVER, BROADCAST, data);
+                if (send(it.second, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
+                    std::cout << "error send to client with id = " <<  it.second <<std::endl;
+            }
+        }
+    else
+        for (auto it :clients){
+                std::string response = create_message(SERVER, BROADCAST, data);
+                if (send(it.second, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
+                    std::cout << "error send to client with id = " <<  it.second <<std::endl;
+        }
+}
+
 void *run_client(void *param) {
 //    SOCKET sock = (SOCKET *)param;
     boolean isThisManager = false;
@@ -342,20 +359,40 @@ void *run_client(void *param) {
                     if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                         std::cout << "error send" << std::endl;
                 }
-
+                pthread_mutex_unlock(&map_items_mutex);
+                // if items holder changes
+                if(items_map[item_id].holder_id != user_id)
+                    continue;
+                // three broadcasts except this user
+                char buf[30];
+                std::string data = "";
+                data += clients_map[user_id].login;
+                data += " ";
+                data += itoa(new_price, buf, 10);
+                data += " ";
+                data += items_map[item_id].name;
+                broadcastSend(sock,data);
+                sleep(20);
+                if(items_map[item_id].holder_id != user_id)
+                    continue;
+                data += " ";
+                data += APPROVE;
+                broadcastSend(BROADCAST_ALL,data);
+                if(items_map.erase(item_id) != 1)
+                    std::cout << "Error: with deleting" << std::endl;
             }
             else{
                 std::string response = create_message(SERVER, ERROR, ERR_ITEM_WRONG_ID);
                 if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                     std::cout << "error send" << std::endl;
-
+                pthread_mutex_unlock(&map_items_mutex);
             }
-            pthread_mutex_unlock(&map_items_mutex);
-
 //            items_map.insert(std::pair<int, item>(newItem.id, newItem));
             // TODO: send acknowledge of adding item
-
         }
+//        else if (msg.compare(1, 4, STOP) == 0){
+//
+//        }
 
     }
 
