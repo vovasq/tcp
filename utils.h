@@ -49,6 +49,7 @@
 #define APPROVE         "aprv"
 #define ACKNOWLEDGE     "ackn"
 #define DENY            "deny"
+#define START           "strt"
 
 
 // errors
