@@ -50,6 +50,7 @@
 #define ACKNOWLEDGE     "ackn"
 #define DENY            "deny"
 #define START           "strt"
+#define DONE            "done"
 
 
 // errors

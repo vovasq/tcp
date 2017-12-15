@@ -424,32 +424,43 @@ void *run_client(void *param) {
                 data += itoa(item_id, buf ,10);
                 data += " ";
                 data += itoa(user_id, buf ,10);
-
                 broadcastSend(sock,data);
-                pthread_t son;
-                pthread_attr_t attr;
-                pthread_attr_init(&attr);
-                pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-                pthread_create(&son, 0, sons_start, (void *) data.c_str());
-//                pthread_detach(son);
-//                pthread_create(&thrd_tmp, 0, run_client, (void *) (tmp_sock)
-//                sleep(20);
-//                if(items_map[item_id].holder_id != user_id)
-//                    continue;
-//                data += " ";
-//                data += APPROVE;
-//                broadcastSend(BROADCAST_ALL,data);
-//                if(items_map.erase(item_id) != 1)
-//                    std::cout << "Error: with deleting" << std::endl;
-            }
-            else{
+            }else{
                 std::string response = create_message(SERVER, ERROR, ERR_ITEM_WRONG_ID);
                 if (send(sock, response.c_str(), MAX_MESSAGE_SIZE, 0) != MAX_MESSAGE_SIZE)
                     std::cout << "error send" << std::endl;
                 pthread_mutex_unlock(&map_items_mutex);
             }
+
+        } else if (msg.compare(1, 4, DONE) == 0){
+            std::cout << "we get a request to done" << std::endl;
+            std::vector < std::string > item_split= split(msg.substr(5, MAX_MESSAGE_SIZE), " ");
+            int item_id = atoi(item_split[1].c_str());
+//                int new_price = atoi(item_id_and_price[2].c_str());
+            std::cout   << "done  item id = " << item_id
+                        << std::endl;
+            // check for such an id in items
+            pthread_mutex_lock(&map_items_mutex);
+            if(items_map.find(item_id) != items_map.end()) {
+                // check for such an price
+                int  user_id = items_map[item_id].holder_id;
+                char buf[30];
+                std::string data = "";
+                data += clients_map[user_id].login;
+                data += " ";
+                data += items_map[item_id].name;
+                data += " ";
+                data += itoa(item_id, buf ,10);
+                data += " ";
+                data += itoa(user_id, buf ,10);
+                data += " ";
+                data += APPROVE;
+                if(items_map.erase(item_id) == 1)
+                    std::cout << "item removed" << std::endl;
+                broadcastSend(sock,data);
+                pthread_mutex_unlock(&map_items_mutex);
+            }
 //            items_map.insert(std::pair<int, item>(newItem.id, newItem));
-            // TODO: send acknowledge of adding item
         }
 //        else if (msg.compare(1, 4, STOP) == 0){
 //
